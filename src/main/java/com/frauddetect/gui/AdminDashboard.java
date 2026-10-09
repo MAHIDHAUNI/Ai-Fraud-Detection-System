@@ -956,6 +956,11 @@ public class AdminDashboard extends JFrame {
         threshGrid.add(settingsLabel("High Risk Cutoff Score"), lbl);
         threshGrid.add(highCutoffField, fld);
 
+        mlWeightField = new JTextField(); mlWeightField.setFont(UIHelper.FONT_REGULAR);
+        lbl.gridy = row; fld.gridy = row++;
+        threshGrid.add(settingsLabel("ML Model Weight (0.0 - 1.0)"), lbl);
+        threshGrid.add(mlWeightField, fld);
+
         card.add(threshGrid);
         card.add(Box.createVerticalStrut(16));
 
@@ -1027,6 +1032,7 @@ public class AdminDashboard extends JFrame {
                     zScoreField.setText(settings.getOrDefault("ZSCORE_THRESHOLD", "3.0"));
                     mediumCutoffField.setText(settings.getOrDefault("MEDIUM_RISK_CUTOFF", "40"));
                     highCutoffField.setText(settings.getOrDefault("HIGH_RISK_CUTOFF", "70"));
+                    mlWeightField.setText(settings.getOrDefault("ML_WEIGHT", "0.40"));
 
                     ruleHighAmountCb.setSelected(Boolean.parseBoolean(settings.getOrDefault("RULE_HIGH_AMOUNT_ENABLED", "true")));
                     ruleVelocityCb.setSelected(Boolean.parseBoolean(settings.getOrDefault("RULE_VELOCITY_ENABLED", "true")));
@@ -1058,6 +1064,7 @@ public class AdminDashboard extends JFrame {
                 String zScore = zScoreField.getText().trim();
                 String medCut = mediumCutoffField.getText().trim();
                 String highCut = highCutoffField.getText().trim();
+                String mlW = mlWeightField.getText().trim();
 
                 // Basic numeric validation
                 try {
@@ -1067,35 +1074,45 @@ public class AdminDashboard extends JFrame {
                     Double.parseDouble(zScore);
                     Integer.parseInt(medCut);
                     Integer.parseInt(highCut);
+                    double wVal = Double.parseDouble(mlW);
+                    if (wVal < 0.0 || wVal > 1.0) {
+                        throw new NumberFormatException("ML Weight must be between 0.0 and 1.0");
+                    }
                 } catch (NumberFormatException nfe) {
                     SwingUtilities.invokeLater(() ->
-                            UIHelper.showError(this, "All threshold fields must contain valid numbers.", "Validation Error")
+                            UIHelper.showError(this, "Threshold fields must contain valid numbers. ML weight must be between 0.0 and 1.0.", "Validation Error")
                     );
                     return;
                 }
 
                 // Persist each setting through SettingsDAO (PreparedStatement)
-                settingsDAO.update("HIGH_AMOUNT_THRESHOLD", highAmt);
-                settingsDAO.update("VELOCITY_MAX_TXNS", velMax);
-                settingsDAO.update("VELOCITY_WINDOW_MIN", velWin);
-                settingsDAO.update("ZSCORE_THRESHOLD", zScore);
-                settingsDAO.update("MEDIUM_RISK_CUTOFF", medCut);
-                settingsDAO.update("HIGH_RISK_CUTOFF", highCut);
+                if (settingsDAO != null) {
+                    settingsDAO.update("HIGH_AMOUNT_THRESHOLD", highAmt);
+                    settingsDAO.update("VELOCITY_MAX_TXNS", velMax);
+                    settingsDAO.update("VELOCITY_WINDOW_MIN", velWin);
+                    settingsDAO.update("ZSCORE_THRESHOLD", zScore);
+                    settingsDAO.update("MEDIUM_RISK_CUTOFF", medCut);
+                    settingsDAO.update("HIGH_RISK_CUTOFF", highCut);
+                    settingsDAO.update("ML_WEIGHT", mlW);
 
-                settingsDAO.update("RULE_HIGH_AMOUNT_ENABLED", String.valueOf(ruleHighAmountCb.isSelected()));
-                settingsDAO.update("RULE_VELOCITY_ENABLED", String.valueOf(ruleVelocityCb.isSelected()));
-                settingsDAO.update("RULE_ANOMALY_ENABLED", String.valueOf(ruleAnomalyCb.isSelected()));
-                settingsDAO.update("RULE_TIME_ENABLED", String.valueOf(ruleTimeCb.isSelected()));
-                settingsDAO.update("RULE_LOCATION_ENABLED", String.valueOf(ruleLocationCb.isSelected()));
-                settingsDAO.update("RULE_ROUND_ENABLED", String.valueOf(ruleRoundCb.isSelected()));
-                settingsDAO.update("RULE_REPEAT_ENABLED", String.valueOf(ruleRepeatCb.isSelected()));
+                    settingsDAO.update("RULE_HIGH_AMOUNT_ENABLED", String.valueOf(ruleHighAmountCb.isSelected()));
+                    settingsDAO.update("RULE_VELOCITY_ENABLED", String.valueOf(ruleVelocityCb.isSelected()));
+                    settingsDAO.update("RULE_ANOMALY_ENABLED", String.valueOf(ruleAnomalyCb.isSelected()));
+                    settingsDAO.update("RULE_TIME_ENABLED", String.valueOf(ruleTimeCb.isSelected()));
+                    settingsDAO.update("RULE_LOCATION_ENABLED", String.valueOf(ruleLocationCb.isSelected()));
+                    settingsDAO.update("RULE_ROUND_ENABLED", String.valueOf(ruleRoundCb.isSelected()));
+                    settingsDAO.update("RULE_REPEAT_ENABLED", String.valueOf(ruleRepeatCb.isSelected()));
+                }
 
                 // Reload the detection engine with the new settings
                 engine.reloadSettings();
-
-                SwingUtilities.invokeLater(() ->
-                        UIHelper.showInfo(this, "Settings saved and detection engine reloaded successfully.", "Settings Updated")
-                );
+                double newW = Double.parseDouble(mlW);
+                SwingUtilities.invokeLater(() -> {
+                    if (mlWeightSpinner != null) {
+                        mlWeightSpinner.setValue(newW);
+                    }
+                    UIHelper.showInfo(this, "Settings saved and detection engine reloaded successfully.", "Settings Updated");
+                });
             } catch (DatabaseException ex) {
                 SwingUtilities.invokeLater(() ->
                         UIHelper.showError(this, "Failed to save settings: " + ex.getMessage(), "Database Error")

@@ -38,7 +38,10 @@ public class Main {
             // 1. Initialize database connection (Singleton pattern)
             DBConnection dbConnection = DBConnection.getInstance();
 
-            // 2. Create DAO layer instances
+            // 2. Automatically verify & bootstrap DB tables (schema auto-creation)
+            initDatabaseTables(dbConnection);
+
+            // 3. Create DAO layer instances
             UserDAO userDAO = new UserDAO(dbConnection);
             TransactionDAO transactionDAO = new TransactionDAO(dbConnection);
             AlertDAO alertDAO = new AlertDAO(dbConnection);
@@ -123,5 +126,74 @@ public class Main {
         userDAO.save(new Customer(0, "rahul_verma", c3Hash, c3Salt, "Rahul Verma", "rahul@example.com", "India", null));
 
         System.out.println("Default users seeded: admin, john_doe, priya_sharma, rahul_verma");
+    }
+
+    /**
+     * Bootstraps DB schema (tables & columns) automatically on application launch.
+     */
+    private static void initDatabaseTables(DBConnection db) {
+        try (java.sql.Connection conn = db.getConnection();
+             java.sql.Statement stmt = conn.createStatement()) {
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS users (" +
+                    "user_id INT AUTO_INCREMENT PRIMARY KEY, " +
+                    "username VARCHAR(50) UNIQUE NOT NULL, " +
+                    "password_hash VARCHAR(128) NOT NULL, " +
+                    "salt VARCHAR(32) NOT NULL, " +
+                    "full_name VARCHAR(100) NOT NULL, " +
+                    "email VARCHAR(100), " +
+                    "role ENUM('CUSTOMER','ADMIN') NOT NULL, " +
+                    "home_country VARCHAR(50) DEFAULT 'India', " +
+                    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS transactions (" +
+                    "txn_id INT AUTO_INCREMENT PRIMARY KEY, " +
+                    "user_id INT NOT NULL, " +
+                    "amount DECIMAL(15,2) NOT NULL, " +
+                    "txn_type ENUM('DOMESTIC','INTERNATIONAL') NOT NULL, " +
+                    "receiver_account VARCHAR(30) NOT NULL, " +
+                    "location VARCHAR(100) NOT NULL, " +
+                    "country VARCHAR(50) NOT NULL, " +
+                    "description VARCHAR(255), " +
+                    "txn_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                    "risk_score INT DEFAULT 0, " +
+                    "risk_level ENUM('LOW','MEDIUM','HIGH') DEFAULT 'LOW', " +
+                    "status ENUM('PENDING','APPROVED','FLAGGED','BLOCKED') DEFAULT 'PENDING', " +
+                    "FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS alerts (" +
+                    "alert_id INT AUTO_INCREMENT PRIMARY KEY, " +
+                    "txn_id INT NOT NULL, " +
+                    "user_id INT NOT NULL, " +
+                    "risk_level ENUM('MEDIUM','HIGH') NOT NULL, " +
+                    "reasons TEXT NOT NULL, " +
+                    "alert_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+                    "resolved BOOLEAN DEFAULT FALSE, " +
+                    "admin_note VARCHAR(255), " +
+                    "FOREIGN KEY (txn_id) REFERENCES transactions(txn_id) ON DELETE CASCADE, " +
+                    "FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            try {
+                stmt.execute("ALTER TABLE alerts ADD COLUMN confirmed_fraud BOOLEAN DEFAULT NULL");
+            } catch (Exception ignored) {}
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS settings (" +
+                    "setting_key VARCHAR(50) PRIMARY KEY, " +
+                    "setting_value VARCHAR(100) NOT NULL, " +
+                    "description VARCHAR(255)" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS model_weights (" +
+                    "feature_name VARCHAR(50) PRIMARY KEY, " +
+                    "weight DOUBLE NOT NULL DEFAULT 0.0, " +
+                    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
+                    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        } catch (Exception e) {
+            System.err.println("Database auto-bootstrap info: " + e.getMessage());
+        }
     }
 }
