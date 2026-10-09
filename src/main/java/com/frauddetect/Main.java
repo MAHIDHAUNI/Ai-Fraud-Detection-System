@@ -5,137 +5,105 @@ import com.frauddetect.dao.SettingsDAO;
 import com.frauddetect.dao.TransactionDAO;
 import com.frauddetect.dao.UserDAO;
 import com.frauddetect.db.DBConnection;
-import com.frauddetect.exception.AuthenticationException;
+import com.frauddetect.detection.FraudDetectionEngine;
 import com.frauddetect.exception.DatabaseException;
+import com.frauddetect.gui.LoginFrame;
+import com.frauddetect.gui.UIHelper;
 import com.frauddetect.model.Admin;
-import com.frauddetect.model.Alert;
 import com.frauddetect.model.Customer;
-import com.frauddetect.model.RiskLevel;
 import com.frauddetect.model.User;
 import com.frauddetect.service.AlertService;
 import com.frauddetect.service.AuthService;
 import com.frauddetect.service.ReportService;
+import com.frauddetect.service.TransactionService;
 import com.frauddetect.util.PasswordUtil;
 
-import java.io.File;
+import javax.swing.SwingUtilities;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Main application entry point for AI Fraud Detection & Transaction Monitoring System.
- * Phase 7 Verification: Tests the complete Service Layer:
- * 1. AuthService (AuthenticationException, Password verification, polymorphic returns)
- * 2. AlertService (Unresolved alert retrieval, alert resolution)
- * 3. ReportService (Summary, Collectors.groupingBy risk breakdown, Top 5 riskiest users, 7-day trend, CSV export)
+ * Initializes all DAO/Service/Engine layers and launches the Swing GUI on the Event Dispatch Thread.
+ *
+ * RUBRIC: 3 - Multithreading: GUI launched via SwingUtilities.invokeLater (EDT)
  */
 public class Main {
 
     public static void main(String[] args) {
         System.out.println("=========================================================================");
-        System.out.println(" AI-Powered Financial Fraud Detection System - Phase 7 Verification");
+        System.out.println(" AI-Powered Financial Fraud Detection System — Starting...");
         System.out.println("=========================================================================\n");
 
         try {
+            // 1. Initialize database connection (Singleton pattern)
             DBConnection dbConnection = DBConnection.getInstance();
+
+            // 2. Create DAO layer instances
             UserDAO userDAO = new UserDAO(dbConnection);
             TransactionDAO transactionDAO = new TransactionDAO(dbConnection);
             AlertDAO alertDAO = new AlertDAO(dbConnection);
             SettingsDAO settingsDAO = new SettingsDAO(dbConnection);
 
+            // 3. Seed default users if the database is empty (first-run bootstrap)
             seedUsersIfEmpty(userDAO);
 
-            // -----------------------------------------------------------------
-            // 1. AuthService Verification
-            // -----------------------------------------------------------------
-            System.out.println("--- 1. AuthService Verification ---");
+            // 4. Initialize detection engine (loads rules and thresholds from DB)
+            FraudDetectionEngine engine = new FraudDetectionEngine(settingsDAO, userDAO, transactionDAO);
+
+            // 5. Create service layer instances
             AuthService authService = new AuthService(userDAO);
-
-            // 1a. Test successful Admin login
-            User adminUser = authService.login("admin", "admin123");
-            System.out.printf("Admin Login Success   : %s | Role: %s | %s%n",
-                    adminUser.getUsername(), adminUser.getRole(), adminUser.getDashboardTitle());
-
-            // 1b. Test successful Customer login
-            User customerUser = authService.login("john_doe", "password123");
-            System.out.printf("Customer Login Success: %s | Role: %s | %s%n",
-                    customerUser.getUsername(), customerUser.getRole(), customerUser.getDashboardTitle());
-
-            // 1c. Test failed login exception
-            try {
-                System.out.print("Testing bad password ('wrong_pwd')... ");
-                authService.login("admin", "wrong_pwd");
-                System.out.println("FAILED: Should have thrown AuthenticationException");
-            } catch (AuthenticationException e) {
-                System.out.println("PASSED: Caught expected AuthenticationException -> " + e.getMessage());
-            }
-
-            // -----------------------------------------------------------------
-            // 2. AlertService Verification
-            // -----------------------------------------------------------------
-            System.out.println("\n--- 2. AlertService Verification ---");
+            TransactionService transactionService = new TransactionService(transactionDAO, alertDAO, engine);
             AlertService alertService = new AlertService(alertDAO);
-            List<Alert> unresolved = alertService.getUnresolvedAlerts();
-            System.out.printf("Total Unresolved Alerts: %d%n", unresolved.size());
-            if (!unresolved.isEmpty()) {
-                Alert first = unresolved.get(0);
-                System.out.printf("  Resolving Alert #%d (Txn #%d)... ", first.getAlertId(), first.getTxnId());
-                boolean resolved = alertService.resolveAlert(first.getAlertId(), "Reviewed and verified with customer by phone");
-                System.out.println(resolved ? "SUCCESS" : "FAILED");
-            }
-
-            // -----------------------------------------------------------------
-            // 3. ReportService Verification (Collections & Streams)
-            // -----------------------------------------------------------------
-            System.out.println("\n--- 3. ReportService Verification (Analytics & Grouping) ---");
             ReportService reportService = new ReportService(transactionDAO, userDAO, alertDAO);
 
-            // 3a. System Metrics Summary
-            ReportService.SystemSummary summary = reportService.getSummaryMetrics();
-            System.out.printf("System Summary: %s%n", summary);
+            // 6. Install modern FlatLaf theme
+            UIHelper.setupTheme();
 
-            // 3b. RUBRIC: 2 - Collections.groupingBy Risk Breakdown
-            System.out.println("\nTransactions Grouped by Risk Level (Collectors.groupingBy):");
-            Map<RiskLevel, Long> riskMap = reportService.getTransactionsPerRiskLevel();
-            riskMap.forEach((level, count) -> System.out.printf("  %-7s : %d transactions%n", level, count));
+            // 7. Launch LoginFrame on the Event Dispatch Thread (EDT)
+            // RUBRIC: 3 - Multithreading: Swing GUI must be created and updated on the EDT
+            SwingUtilities.invokeLater(() -> {
+                LoginFrame loginFrame = new LoginFrame(
+                        authService,
+                        transactionService,
+                        alertService,
+                        reportService,
+                        settingsDAO,
+                        userDAO,
+                        engine
+                );
+                loginFrame.setVisible(true);
+            });
 
-            // 3c. RUBRIC: 2 - Top Riskiest Users (Custom Comparator + Streams)
-            System.out.println("\nTop Riskiest Customer Accounts:");
-            List<ReportService.RiskyUserSummary> topRisky = reportService.getTopRiskiestUsers(5);
-            for (ReportService.RiskyUserSummary r : topRisky) {
-                System.out.printf("  User #%-2d (%-14s) | Txns: %2d | Blocked: %d | Flagged: %d | Avg Score: %5.1f | Volume: ₹%,.2f%n",
-                        r.getUserId(), r.getUsername(), r.getTotalTransactions(),
-                        r.getBlockedCount(), r.getSuspiciousCount(), r.getAverageRiskScore(), r.getTotalAmount());
-            }
+            System.out.println("GUI launched. Login window is now open.");
 
-            // 3d. 7-Day Trend
-            System.out.println("\nLast 7 Days Activity Trend:");
-            Map<String, ReportService.DailyTrend> trend = reportService.getDailyTrendLast7Days();
-            trend.forEach((date, d) -> System.out.printf("  %s -> Total: %2d | Approved: %2d | Flagged: %d | Blocked: %d | Volume: ₹%,9.2f%n",
-                    date, d.getTotalCount(), d.getApprovedCount(), d.getFlaggedCount(), d.getBlockedCount(), d.getTotalVolume()));
+            // Register JVM shutdown hook for clean thread pool termination
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("Shutting down background services...");
+                transactionService.shutdown();
+                com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+            }));
 
-            // 3e. Export CSV Report
-            File csvOutput = new File("docs", "sample_audit_report.csv");
-            reportService.exportReportToCSV(csvOutput);
-            System.out.printf("%nAudit CSV Exported Successfully: %s (Size: %d bytes)%n",
-                    csvOutput.getAbsolutePath(), csvOutput.length());
-
-            System.out.println("\n=========================================================================");
-            System.out.println(" Phase 7 Verification Completed Successfully!");
-            System.out.println("=========================================================================");
-
-        } catch (Exception e) {
-            System.err.println("Exception during Phase 7 execution: " + e.getMessage());
+        } catch (DatabaseException e) {
+            System.err.println("FATAL: Could not connect to database: " + e.getMessage());
+            System.err.println("Please verify config.properties and ensure MySQL is running.");
             e.printStackTrace();
-        } finally {
-            com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+        } catch (Exception e) {
+            System.err.println("FATAL: Unexpected startup error: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
+    /**
+     * Seeds the database with default users (1 admin + 3 customers) on first run.
+     * Uses PasswordUtil for cryptographically secure salted password hashing.
+     */
     public static void seedUsersIfEmpty(UserDAO userDAO) throws DatabaseException {
         List<User> existingUsers = userDAO.findAll();
         if (!existingUsers.isEmpty()) {
             return;
         }
+
+        System.out.println("First run detected — seeding default users...");
 
         String adminSalt = PasswordUtil.generateSalt();
         String adminHash = PasswordUtil.hash("admin123", adminSalt);
@@ -152,5 +120,7 @@ public class Main {
         String c3Salt = PasswordUtil.generateSalt();
         String c3Hash = PasswordUtil.hash("password123", c3Salt);
         userDAO.save(new Customer(0, "rahul_verma", c3Hash, c3Salt, "Rahul Verma", "rahul@example.com", "India", null));
+
+        System.out.println("Default users seeded: admin, john_doe, priya_sharma, rahul_verma");
     }
 }
