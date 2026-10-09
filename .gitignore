@@ -20,3 +20,6 @@ src/main/resources/config.properties
 # OS files
 .DS_Store
 Thumbs.db
+
+target/
+tempCodeRunnerFile.xml
