@@ -1,0 +1,8 @@
+# Database Configuration Example
+# Copy this file to src/main/resources/config.properties (or project root config.properties)
+# and update with your local MySQL database credentials.
+# NOTE: Never commit config.properties to Git!
+
+db.url=jdbc:mysql://localhost:3306/fraud_detection_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+db.user=root
+db.password=your_db_password_here

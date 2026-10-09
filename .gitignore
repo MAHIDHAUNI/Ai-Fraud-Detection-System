@@ -1,0 +1,22 @@
+# Maven build outputs
+target/
+*.class
+
+# Logs
+*.log
+
+# Sensitive credentials - NEVER commit config.properties!
+config.properties
+src/main/resources/config.properties
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
