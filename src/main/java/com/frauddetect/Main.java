@@ -43,12 +43,13 @@ public class Main {
             TransactionDAO transactionDAO = new TransactionDAO(dbConnection);
             AlertDAO alertDAO = new AlertDAO(dbConnection);
             SettingsDAO settingsDAO = new SettingsDAO(dbConnection);
+            com.frauddetect.dao.ModelDAO modelDAO = new com.frauddetect.dao.ModelDAO(dbConnection);
 
             // 3. Seed default users if the database is empty (first-run bootstrap)
             seedUsersIfEmpty(userDAO);
 
-            // 4. Initialize detection engine (loads rules and thresholds from DB)
-            FraudDetectionEngine engine = new FraudDetectionEngine(settingsDAO, userDAO, transactionDAO);
+            // 4. Initialize detection engine (loads rules, thresholds, and ML model weights from DB)
+            FraudDetectionEngine engine = new FraudDetectionEngine(settingsDAO, userDAO, transactionDAO, modelDAO);
 
             // 5. Create service layer instances
             AuthService authService = new AuthService(userDAO);

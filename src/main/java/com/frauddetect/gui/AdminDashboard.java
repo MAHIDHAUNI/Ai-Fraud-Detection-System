@@ -16,6 +16,7 @@ import com.frauddetect.service.TransactionService;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
@@ -23,16 +24,23 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
+
+import com.frauddetect.ml.FeatureExtractor;
+import com.frauddetect.ml.LogisticRegressionModel;
+import com.frauddetect.ml.ModelEvaluator;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -93,6 +101,7 @@ public class AdminDashboard extends JFrame {
     private JTextField zScoreField;
     private JTextField mediumCutoffField;
     private JTextField highCutoffField;
+    private JTextField mlWeightField;
     private JCheckBox ruleHighAmountCb;
     private JCheckBox ruleVelocityCb;
     private JCheckBox ruleAnomalyCb;
@@ -100,6 +109,13 @@ public class AdminDashboard extends JFrame {
     private JCheckBox ruleLocationCb;
     private JCheckBox ruleRoundCb;
     private JCheckBox ruleRepeatCb;
+
+    // ML Engine components
+    private JLabel mlStatusLabel;
+    private JSpinner mlWeightSpinner;
+    private JTable weightsTable;
+    private DefaultTableModel weightsModel;
+    private JTextArea metricsArea;
 
     /**
      * RUBRIC: 3 - Multithreading: ScheduledExecutorService for periodic dashboard refresh
@@ -158,6 +174,7 @@ public class AdminDashboard extends JFrame {
         tabbedPane.addTab("  📡 Live Monitor  ", buildMonitorPanel());
         tabbedPane.addTab("  🔔 Alerts  ", buildAlertsPanel());
         tabbedPane.addTab("  📊 Reports  ", buildReportsPanel());
+        tabbedPane.addTab("  🤖 ML Engine  ", buildMLPanel());
         tabbedPane.addTab("  ⚙️ Settings  ", buildSettingsPanel());
 
         // Refresh data when switching tabs
@@ -166,7 +183,8 @@ public class AdminDashboard extends JFrame {
             switch (idx) {
                 case 0 -> refreshMonitor();
                 case 1 -> loadAlerts();
-                case 3 -> loadSettings();
+                case 3 -> refreshMLPanel();
+                case 4 -> loadSettings();
             }
         });
 
@@ -453,16 +471,36 @@ public class AdminDashboard extends JFrame {
             return;
         }
 
-        String note = JOptionPane.showInputDialog(this, "Enter resolution note for Alert #" + alertId + ":",
-                "Resolve Alert", JOptionPane.QUESTION_MESSAGE);
-        if (note == null) return; // Cancelled
+        JPanel dialogPanel = new JPanel();
+        dialogPanel.setLayout(new BoxLayout(dialogPanel, BoxLayout.Y_AXIS));
+        dialogPanel.add(new JLabel("Enter resolution note for Alert #" + alertId + ":"));
+        JTextField noteField = new JTextField("Reviewed by Administrator", 20);
+        dialogPanel.add(noteField);
+        dialogPanel.add(Box.createVerticalStrut(10));
+
+        dialogPanel.add(new JLabel("Fraud Feedback Label (for ML Model Retraining):"));
+        JRadioButton fraudBtn = new JRadioButton("Confirmed Fraud (True Positive)", true);
+        JRadioButton legitBtn = new JRadioButton("Legitimate Transaction (False Positive)");
+        ButtonGroup group = new ButtonGroup();
+        group.add(fraudBtn);
+        group.add(legitBtn);
+        dialogPanel.add(fraudBtn);
+        dialogPanel.add(legitBtn);
+
+        int option = JOptionPane.showConfirmDialog(this, dialogPanel, "Resolve Alert #" + alertId,
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (option != JOptionPane.OK_OPTION) return;
+
+        String note = noteField.getText().trim();
+        boolean confirmedFraud = fraudBtn.isSelected();
 
         new Thread(() -> {
             try {
-                boolean resolved = alertService.resolveAlert(alertId, note);
+                boolean resolved = alertService.resolveAlert(alertId, note, confirmedFraud);
                 if (resolved) {
                     SwingUtilities.invokeLater(() -> {
-                        UIHelper.showInfo(this, "Alert #" + alertId + " resolved successfully.", "Alert Resolved");
+                        UIHelper.showInfo(this, "Alert #" + alertId + " resolved (" +
+                                (confirmedFraud ? "Confirmed Fraud" : "False Positive") + ").", "Alert Resolved");
                         loadAlerts();
                     });
                 } else {
@@ -689,6 +727,158 @@ public class AdminDashboard extends JFrame {
         };
         chart.setOpaque(false);
         return chart;
+    }
+
+    // ====================== TAB 4: ML ENGINE ======================
+
+    private JPanel buildMLPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setOpaque(false);
+        panel.setBorder(new EmptyBorder(8, 8, 8, 8));
+
+        // Top Control Bar Card
+        JPanel topCard = UIHelper.createCardPanel();
+        topCard.setLayout(new FlowLayout(FlowLayout.LEFT, 15, 8));
+
+        mlStatusLabel = new JLabel("Status: Initialized");
+        mlStatusLabel.setFont(UIHelper.FONT_BOLD);
+        topCard.add(mlStatusLabel);
+
+        topCard.add(Box.createHorizontalStrut(20));
+
+        JLabel weightLbl = new JLabel("Hybrid ML Weight:");
+        weightLbl.setFont(UIHelper.FONT_BOLD);
+        topCard.add(weightLbl);
+
+        mlWeightSpinner = new JSpinner(new SpinnerNumberModel(engine.getMlWeight(), 0.0, 1.0, 0.05));
+        mlWeightSpinner.setFont(UIHelper.FONT_REGULAR);
+        mlWeightSpinner.setPreferredSize(new Dimension(75, 28));
+        topCard.add(mlWeightSpinner);
+
+        JButton saveWeightBtn = UIHelper.createButton("Save ML Weight", UIHelper.COLOR_PRIMARY, Color.WHITE);
+        saveWeightBtn.addActionListener(e -> saveMLWeight());
+        topCard.add(saveWeightBtn);
+
+        topCard.add(Box.createHorizontalStrut(20));
+
+        JButton retrainBtn = UIHelper.createSuccessButton("🔄 Retrain ML Model");
+        retrainBtn.addActionListener(e -> retrainMLModel());
+        topCard.add(retrainBtn);
+
+        panel.add(topCard, BorderLayout.NORTH);
+
+        // Center Split Panel
+        JPanel centerPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        centerPanel.setOpaque(false);
+
+        // Left Card: Model Parameters
+        JPanel leftCard = UIHelper.createCardPanel();
+        leftCard.setLayout(new BorderLayout(0, 8));
+
+        JLabel weightsTitle = new JLabel("Model Feature Weights & Normalization Parameters");
+        weightsTitle.setFont(UIHelper.FONT_SUBTITLE);
+        weightsTitle.setForeground(UIHelper.COLOR_PRIMARY);
+        leftCard.add(weightsTitle, BorderLayout.NORTH);
+
+        String[] cols = {"Feature Name", "Weight", "Mean", "Std Dev"};
+        weightsModel = new DefaultTableModel(cols, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        weightsTable = new JTable(weightsModel);
+        weightsTable.setRowHeight(24);
+        weightsTable.setFont(UIHelper.FONT_REGULAR);
+        weightsTable.getTableHeader().setFont(UIHelper.FONT_BOLD);
+        leftCard.add(new JScrollPane(weightsTable), BorderLayout.CENTER);
+
+        centerPanel.add(leftCard);
+
+        // Right Card: Evaluation Metrics
+        JPanel rightCard = UIHelper.createCardPanel();
+        rightCard.setLayout(new BorderLayout(0, 8));
+
+        JLabel metricsTitle = new JLabel("Evaluation Metrics & Confusion Matrix (70/30 Split)");
+        metricsTitle.setFont(UIHelper.FONT_SUBTITLE);
+        metricsTitle.setForeground(UIHelper.COLOR_PRIMARY);
+        rightCard.add(metricsTitle, BorderLayout.NORTH);
+
+        metricsArea = new JTextArea();
+        metricsArea.setFont(new java.awt.Font("Consolas", java.awt.Font.PLAIN, 12));
+        metricsArea.setEditable(false);
+        metricsArea.setBackground(new Color(248, 250, 252));
+        metricsArea.setForeground(UIHelper.COLOR_TEXT_MAIN);
+        metricsArea.setBorder(new EmptyBorder(8, 8, 8, 8));
+        rightCard.add(new JScrollPane(metricsArea), BorderLayout.CENTER);
+
+        centerPanel.add(rightCard);
+
+        panel.add(centerPanel, BorderLayout.CENTER);
+
+        refreshMLPanel();
+        return panel;
+    }
+
+    private void refreshMLPanel() {
+        LogisticRegressionModel model = engine.getModel();
+        if (model != null && model.isTrained()) {
+            mlStatusLabel.setText("● ML Model Active (Plain Java Logistic Regression)");
+            mlStatusLabel.setForeground(UIHelper.COLOR_SUCCESS);
+
+            weightsModel.setRowCount(0);
+            double[] weights = model.getWeights();
+            double[] means = model.getFeatureMeans();
+            double[] stds = model.getFeatureStds();
+
+            weightsModel.addRow(new Object[]{"Bias (w0)", String.format("%.4f", weights[0]), "N/A", "N/A"});
+            for (int i = 0; i < FeatureExtractor.FEATURE_NAMES.length; i++) {
+                weightsModel.addRow(new Object[]{
+                        FeatureExtractor.FEATURE_NAMES[i],
+                        String.format("%.4f", weights[i + 1]),
+                        String.format("%.2f", means[i]),
+                        String.format("%.2f", stds[i])
+                });
+            }
+
+            ModelEvaluator.EvaluationResult metrics = engine.getModelMetrics();
+            if (metrics != null) {
+                metricsArea.setText(metrics.toFormattedString());
+            } else {
+                metricsArea.setText("Model trained. Evaluation metrics available upon retraining.");
+            }
+        } else {
+            mlStatusLabel.setText("● Model Untrained");
+            mlStatusLabel.setForeground(UIHelper.COLOR_DANGER);
+        }
+    }
+
+    private void retrainMLModel() {
+        new Thread(() -> {
+            ModelEvaluator.EvaluationResult result = engine.retrainModel();
+            SwingUtilities.invokeLater(() -> {
+                refreshMLPanel();
+                UIHelper.showInfo(this, "ML Model successfully retrained!\n\n" +
+                        String.format("Accuracy:  %.2f%%\nPrecision: %.2f%%\nRecall:    %.2f%%\nF1-Score:  %.4f",
+                                result.getAccuracy() * 100, result.getPrecision() * 100,
+                                result.getRecall() * 100, result.getF1Score()), "Model Retrained");
+            });
+        }).start();
+    }
+
+    private void saveMLWeight() {
+        double weight = (double) mlWeightSpinner.getValue();
+        engine.setMlWeight(weight);
+        new Thread(() -> {
+            try {
+                settingsDAO.update("ML_WEIGHT", String.valueOf(weight));
+                SwingUtilities.invokeLater(() ->
+                        UIHelper.showInfo(this, "ML hybrid weight set to " + weight + " and saved.", "ML Weight Saved")
+                );
+            } catch (DatabaseException ex) {
+                SwingUtilities.invokeLater(() ->
+                        UIHelper.showError(this, "Failed to save ML weight: " + ex.getMessage(), "Error")
+                );
+            }
+        }).start();
     }
 
     // ====================== TAB 4: SETTINGS ======================

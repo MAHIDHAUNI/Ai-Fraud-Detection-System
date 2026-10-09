@@ -160,6 +160,52 @@ public class AlertDAO implements Repository<Alert, Integer> {
         }
     }
 
+    /**
+     * Resolves an alert with a fraud/false-positive label for ML feedback loop.
+     *
+     * @param alertId        the alert identifier
+     * @param note           admin review note
+     * @param confirmedFraud true if confirmed fraud, false if false positive
+     * @return true if updated successfully
+     * @throws DatabaseException on database error
+     */
+    public boolean resolveWithFraudLabel(int alertId, String note, boolean confirmedFraud) throws DatabaseException {
+        String sql = "UPDATE alerts SET resolved = TRUE, admin_note = ?, confirmed_fraud = ? WHERE alert_id = ?";
+
+        try (Connection conn = dbConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, note);
+            ps.setBoolean(2, confirmedFraud);
+            ps.setInt(3, alertId);
+
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new DatabaseException("Failed to resolve alert with fraud label, ID: " + alertId, e);
+        }
+    }
+
+    /**
+     * Retrieves all alerts that have been labelled (confirmed_fraud IS NOT NULL)
+     * for ML model retraining.
+     */
+    public List<Alert> findLabelled() throws DatabaseException {
+        String sql = "SELECT * FROM alerts WHERE confirmed_fraud IS NOT NULL ORDER BY alert_id";
+        List<Alert> list = new ArrayList<>();
+
+        try (Connection conn = dbConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                list.add(mapRowToAlert(rs));
+            }
+            return list;
+        } catch (SQLException e) {
+            throw new DatabaseException("Failed to retrieve labelled alerts.", e);
+        }
+    }
+
     @Override
     public boolean update(Alert alert) throws DatabaseException {
         String sql = "UPDATE alerts SET risk_level = ?, reasons = ?, resolved = ?, admin_note = ? WHERE alert_id = ?";
@@ -203,6 +249,13 @@ public class AlertDAO implements Repository<Alert, Integer> {
         boolean resolved = rs.getBoolean("resolved");
         String adminNote = rs.getString("admin_note");
 
+        // Read confirmed_fraud (nullable Boolean)
+        Boolean confirmedFraud = null;
+        boolean cfVal = rs.getBoolean("confirmed_fraud");
+        if (!rs.wasNull()) {
+            confirmedFraud = cfVal;
+        }
+
         RiskLevel riskLevel;
         try {
             riskLevel = RiskLevel.valueOf(riskLevelStr);
@@ -210,6 +263,6 @@ public class AlertDAO implements Repository<Alert, Integer> {
             riskLevel = RiskLevel.MEDIUM;
         }
 
-        return new Alert(alertId, txnId, userId, riskLevel, reasons, alertTime, resolved, adminNote);
+        return new Alert(alertId, txnId, userId, riskLevel, reasons, alertTime, resolved, adminNote, confirmedFraud);
     }
 }

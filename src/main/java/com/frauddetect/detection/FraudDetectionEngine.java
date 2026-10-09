@@ -1,9 +1,14 @@
 package com.frauddetect.detection;
 
+import com.frauddetect.dao.ModelDAO;
 import com.frauddetect.dao.SettingsDAO;
 import com.frauddetect.dao.TransactionDAO;
 import com.frauddetect.dao.UserDAO;
 import com.frauddetect.exception.DatabaseException;
+import com.frauddetect.ml.DataGenerator;
+import com.frauddetect.ml.FeatureExtractor;
+import com.frauddetect.ml.LogisticRegressionModel;
+import com.frauddetect.ml.ModelEvaluator;
 import com.frauddetect.model.DetectionResult;
 import com.frauddetect.model.RiskLevel;
 import com.frauddetect.model.Transaction;
@@ -31,19 +36,62 @@ public class FraudDetectionEngine {
     private final SettingsDAO settingsDAO;
     private final UserDAO userDAO;
     private final TransactionDAO transactionDAO;
+    private final ModelDAO modelDAO;
 
     // Polymorphism & Collections: List of polymorphic FraudRule implementations
     private final List<FraudRule> rules;
 
-    private int mediumRiskCutoff;
-    private int highRiskCutoff;
+    // ML Engine
+    private final LogisticRegressionModel model;
+    private double mlWeight = 0.40;
+    private ModelEvaluator.EvaluationResult lastMetrics;
 
-    public FraudDetectionEngine(SettingsDAO settingsDAO, UserDAO userDAO, TransactionDAO transactionDAO) {
+    private int mediumRiskCutoff = 40;
+    private int highRiskCutoff = 70;
+
+    public FraudDetectionEngine(SettingsDAO settingsDAO, UserDAO userDAO, TransactionDAO transactionDAO, ModelDAO modelDAO) {
         this.settingsDAO = settingsDAO;
         this.userDAO = userDAO;
         this.transactionDAO = transactionDAO;
+        this.modelDAO = modelDAO;
         this.rules = new ArrayList<>();
+        this.model = new LogisticRegressionModel(FeatureExtractor.FEATURE_COUNT);
+        initModel();
         reloadSettings();
+    }
+
+    public FraudDetectionEngine(SettingsDAO settingsDAO, UserDAO userDAO, TransactionDAO transactionDAO) {
+        this(settingsDAO, userDAO, transactionDAO, null);
+    }
+
+    private void initModel() {
+        boolean loaded = false;
+        if (modelDAO != null) {
+            try {
+                loaded = modelDAO.loadModel(model);
+            } catch (DatabaseException e) {
+                System.err.println("Warning: Failed to load ML model weights from DB: " + e.getMessage());
+            }
+        }
+        if (!loaded || !model.isTrained()) {
+            retrainModel();
+        }
+    }
+
+    public synchronized ModelEvaluator.EvaluationResult retrainModel() {
+        List<DataGenerator.LabelledSample> synthetic = DataGenerator.generateDataset(3000);
+        lastMetrics = ModelEvaluator.trainAndEvaluate(synthetic, 0.05, 500, 42L);
+        LogisticRegressionModel trained = ModelEvaluator.trainFull(synthetic, 0.05, 500);
+        this.model.copyFrom(trained);
+
+        if (modelDAO != null) {
+            try {
+                modelDAO.saveModel(this.model);
+            } catch (DatabaseException e) {
+                System.err.println("Warning: Failed to save trained ML weights to DB: " + e.getMessage());
+            }
+        }
+        return lastMetrics;
     }
 
     /**
@@ -62,6 +110,7 @@ public class FraudDetectionEngine {
 
             this.mediumRiskCutoff = (settingsDAO != null) ? settingsDAO.getInt("MEDIUM_RISK_CUTOFF", 40) : 40;
             this.highRiskCutoff = (settingsDAO != null) ? settingsDAO.getInt("HIGH_RISK_CUTOFF", 70) : 70;
+            this.mlWeight = (settingsDAO != null) ? settingsDAO.getDouble("ML_WEIGHT", 0.40) : 0.40;
 
             // Read enabled flags from settingsDAO
             boolean ruleHighAmount = (settingsDAO == null) || settingsDAO.getBoolean("RULE_HIGH_AMOUNT_ENABLED", true);
@@ -85,6 +134,7 @@ public class FraudDetectionEngine {
             System.err.println("Warning: Failed to load settings from DB. Applying built-in defaults: " + e.getMessage());
             this.mediumRiskCutoff = 40;
             this.highRiskCutoff = 70;
+            this.mlWeight = 0.40;
             rules.add(new HighAmountRule(50000.0, 1.5, true));
             rules.add(new VelocityRule(5, 10, 1.4, true));
             rules.add(new StatisticalAnomalyRule(3.0, 1.6, true));
@@ -109,6 +159,7 @@ public class FraudDetectionEngine {
 
     /**
      * Polymorphically evaluates all active fraud rules against the transaction and user history.
+     * Integrates hybrid ML logistic regression scoring.
      *
      * @param transaction the candidate transaction
      * @param history     contextual user history
@@ -144,17 +195,29 @@ public class FraudDetectionEngine {
             }
         }
 
-        int finalScore = 0;
+        int ruleScore = 0;
         if (!triggeredReasons.isEmpty()) {
-            // Compute base composite score combining weighted average and peak severity
             double weightedAverage = (totalActiveWeight > 0) ? (weightedSum / totalActiveWeight) : 0;
-            // Hybrid blend: 60% peak rule severity + 40% weighted average to prevent dilution
             double rawComposite = (0.6 * highestSingleRuleScore) + (0.4 * weightedAverage);
-
-            // RUBRIC: 1 - Polymorphic dispatch on Transaction (Domestic 1.0x vs International 1.2x)
             double adjustedScore = rawComposite * transaction.getRiskMultiplier();
+            ruleScore = (int) Math.min(100, Math.round(adjustedScore));
+        }
 
-            finalScore = (int) Math.min(100, Math.round(adjustedScore));
+        // ML Probability Scoring
+        int finalScore = ruleScore;
+        if (model != null && model.isTrained()) {
+            double[] features = FeatureExtractor.extractFeatures(transaction, history);
+            double mlProb = model.predictProbability(features);
+            int mlScore = (int) Math.round(mlProb * 100.0);
+
+            if (mlProb >= 0.50) {
+                triggeredReasons.add(String.format("AI ML Anomaly Model (Fraud Probability: %.1f%%)", mlProb * 100.0));
+            }
+
+            if (mlWeight > 0.0) {
+                double hybrid = (1.0 - mlWeight) * ruleScore + mlWeight * mlScore;
+                finalScore = (int) Math.min(100, Math.max(0, Math.round(hybrid)));
+            }
         }
 
         // Determine Risk Level based on configurable thresholds
@@ -236,5 +299,21 @@ public class FraudDetectionEngine {
 
     public int getHighRiskCutoff() {
         return highRiskCutoff;
+    }
+
+    public LogisticRegressionModel getModel() {
+        return model;
+    }
+
+    public ModelEvaluator.EvaluationResult getModelMetrics() {
+        return lastMetrics;
+    }
+
+    public double getMlWeight() {
+        return mlWeight;
+    }
+
+    public void setMlWeight(double mlWeight) {
+        this.mlWeight = mlWeight;
     }
 }

@@ -16,6 +16,7 @@ public class Alert {
     private Timestamp alertTime;
     private boolean resolved;
     private String adminNote;
+    private Boolean confirmedFraud; // null = unreviewed, true = confirmed, false = false positive
 
     public Alert() {
         this.resolved = false;
@@ -41,6 +42,13 @@ public class Alert {
         this.alertTime = alertTime;
         this.resolved = resolved;
         this.adminNote = adminNote;
+        this.confirmedFraud = null;
+    }
+
+    public Alert(int alertId, int txnId, int userId, RiskLevel riskLevel,
+                 String reasons, Timestamp alertTime, boolean resolved, String adminNote, Boolean confirmedFraud) {
+        this(alertId, txnId, userId, riskLevel, reasons, alertTime, resolved, adminNote);
+        this.confirmedFraud = confirmedFraud;
     }
 
     // Getters and Setters
@@ -108,9 +116,19 @@ public class Alert {
         this.adminNote = adminNote;
     }
 
+    public Boolean getConfirmedFraud() {
+        return confirmedFraud;
+    }
+
+    public void setConfirmedFraud(Boolean confirmedFraud) {
+        this.confirmedFraud = confirmedFraud;
+    }
+
     @Override
     public String toString() {
-        return String.format("Alert #%d [Txn #%d, User #%d, Level: %s, Resolved: %b, Note: %s]",
-                alertId, txnId, userId, riskLevel, resolved, (adminNote != null ? adminNote : "N/A"));
+        return String.format("Alert #%d [Txn #%d, User #%d, Level: %s, Resolved: %b, Fraud: %s, Note: %s]",
+                alertId, txnId, userId, riskLevel, resolved,
+                (confirmedFraud != null ? confirmedFraud.toString() : "unreviewed"),
+                (adminNote != null ? adminNote : "N/A"));
     }
 }

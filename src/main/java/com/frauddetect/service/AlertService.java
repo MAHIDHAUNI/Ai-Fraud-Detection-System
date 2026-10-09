@@ -37,6 +37,15 @@ public class AlertService {
     }
 
     /**
+     * Resolves an active security alert by marking it reviewed, adding admin notes,
+     * and labeling whether it was confirmed fraud or a false positive.
+     */
+    public boolean resolveAlert(int alertId, String adminNote, boolean confirmedFraud) throws DatabaseException {
+        String note = (adminNote != null && !adminNote.isBlank()) ? adminNote.trim() : "Resolved by Administrator";
+        return alertDAO.resolveWithFraudLabel(alertId, note, confirmedFraud);
+    }
+
+    /**
      * Resolves an active security alert by marking it reviewed and adding admin notes.
      *
      * @param alertId   the alert identifier
@@ -45,8 +54,7 @@ public class AlertService {
      * @throws DatabaseException on database error
      */
     public boolean resolveAlert(int alertId, String adminNote) throws DatabaseException {
-        String note = (adminNote != null && !adminNote.isBlank()) ? adminNote.trim() : "Resolved by Administrator";
-        return alertDAO.resolve(alertId, note);
+        return resolveAlert(alertId, adminNote, false);
     }
 
     /**
