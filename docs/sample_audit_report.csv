@@ -1,0 +1,67 @@
+=== AI FRAUD DETECTION & TRANSACTION MONITORING AUDIT REPORT ===
+Generated On:,2026-10-09T11:11:32.047944400
+
+--- SYSTEM METRICS SUMMARY ---
+Metric,Value
+Total Transactions Processed,40
+Approved Transactions,30
+Flagged Transactions (Medium Risk),4
+Blocked Transactions (High Risk),6
+Total Transaction Volume (INR),₹964,650.00
+Total Prevented Fraud Amount (INR),₹661,500.00
+System Fraud Detection Rate,25.00%
+
+--- RISK LEVEL DISTRIBUTION ---
+Risk Level,Count,Percentage
+LOW,30,75.00%
+MEDIUM,4,10.00%
+HIGH,6,15.00%
+
+--- TOP 5 HIGHEST RISK ACCOUNTS ---
+User ID,Username,Full Name,Total Txns,Flagged,Blocked,Avg Risk Score,Total Volume
+3,priya_sharma,Priya Sharma,16,5,3,30.2,₹509,050.00
+2,john_doe,John Doe,14,4,2,26.9,₹327,200.00
+4,rahul_verma,Rahul Verma,10,1,1,13.2,₹128,400.00
+
+--- TRANSACTION AUDIT LOGS ---
+Txn ID,User ID,Amount (INR),Type,Category,Receiver Account,Location,Country,Timestamp,Risk Score,Risk Level,Status,Description
+30,4,1000.00,DOMESTIC,"Domestic Transfer",776655443306,"Hyderabad","India",2026-10-09 15:35:41.0,0,LOW,PENDING,"Mobile recharge"
+39,3,195000.00,DOMESTIC,"Domestic Transfer",887766554488,"Bengaluru","India",2026-10-09 15:08:11.0,92,HIGH,BLOCKED,"Concurrent Test - Statistical Anomaly"
+23,3,185000.00,DOMESTIC,"Domestic Transfer",887766554415,"Bengaluru","India",2026-10-09 15:05:41.0,88,HIGH,BLOCKED,"Massive anomalous investment"
+22,3,9500.00,DOMESTIC,"Domestic Transfer",887766554414,"Bengaluru","India",2026-10-09 14:53:41.0,78,HIGH,FLAGGED,"Rapid transfer 5 (velocity exceeded)"
+21,3,8500.00,DOMESTIC,"Domestic Transfer",887766554413,"Bengaluru","India",2026-10-09 14:51:41.0,55,MEDIUM,FLAGGED,"Rapid transfer 4"
+20,3,9000.00,DOMESTIC,"Domestic Transfer",887766554412,"Bengaluru","India",2026-10-09 14:49:41.0,35,LOW,APPROVED,"Rapid transfer 3"
+19,3,8000.00,DOMESTIC,"Domestic Transfer",887766554411,"Bengaluru","India",2026-10-09 14:47:41.0,25,LOW,APPROVED,"Rapid transfer 2"
+18,3,8000.00,DOMESTIC,"Domestic Transfer",887766554410,"Bengaluru","India",2026-10-09 14:45:41.0,15,LOW,APPROVED,"Rapid transfer 1"
+37,3,50000.00,DOMESTIC,"Domestic Transfer",887766554499,"Bengaluru","India",2026-10-09 14:08:11.0,45,MEDIUM,FLAGGED,"Concurrent Test - Round Amount"
+40,3,12000.00,DOMESTIC,"Domestic Transfer",987654321010,"Mumbai","India",2026-10-09 12:50:11.0,0,LOW,APPROVED,"Routine retail transaction #10"
+38,4,9600.00,DOMESTIC,"Domestic Transfer",987654321008,"Mumbai","India",2026-10-09 12:40:11.0,0,LOW,APPROVED,"Routine retail transaction #8"
+36,2,7200.00,DOMESTIC,"Domestic Transfer",987654321006,"Mumbai","India",2026-10-09 12:30:11.0,0,LOW,APPROVED,"Routine retail transaction #6"
+35,4,6000.00,DOMESTIC,"Domestic Transfer",987654321005,"Mumbai","India",2026-10-09 12:25:11.0,0,LOW,APPROVED,"Routine retail transaction #5"
+33,2,3600.00,DOMESTIC,"Domestic Transfer",987654321003,"Mumbai","India",2026-10-09 12:15:11.0,0,LOW,APPROVED,"Routine retail transaction #3"
+32,4,2400.00,DOMESTIC,"Domestic Transfer",987654321002,"Mumbai","India",2026-10-09 12:10:11.0,0,LOW,APPROVED,"Routine retail transaction #2"
+31,3,1200.00,DOMESTIC,"Domestic Transfer",987654321001,"Mumbai","India",2026-10-09 12:05:11.0,0,LOW,APPROVED,"Routine retail transaction #1"
+11,2,15000.00,DOMESTIC,"Domestic Transfer",987654321009,"Mumbai","India",2026-10-09 04:35:41.0,62,MEDIUM,FLAGGED,"Consulting fee installment 2 (rapid repeat)"
+10,2,15000.00,DOMESTIC,"Domestic Transfer",987654321009,"Mumbai","India",2026-10-09 03:35:41.0,15,LOW,APPROVED,"Consulting fee installment 1"
+34,2,95000.00,INTERNATIONAL,"International Cross-Border Transfer",112233445566,"Dubai","UAE",2026-10-09 03:15:11.0,100,HIGH,BLOCKED,"Concurrent Test - High-value Overseas Import"
+9,2,50000.00,DOMESTIC,"Domestic Transfer",987654321008,"Mumbai","India",2026-10-08 21:35:41.0,48,MEDIUM,FLAGGED,"Suspicious round amount transfer"
+7,2,950.00,DOMESTIC,"Domestic Transfer",987654321007,"Mumbai","India",2026-10-08 15:35:41.0,5,LOW,APPROVED,"Pharmacy medicines"
+8,2,95000.00,INTERNATIONAL,"International Cross-Border Transfer",112233445566,"Dubai","UAE",2026-10-08 08:45:00.0,92,HIGH,BLOCKED,"High value electronics import"
+29,4,82000.00,INTERNATIONAL,"International Cross-Border Transfer",334455667788,"Moscow","Russia",2026-10-08 08:10:00.0,85,HIGH,BLOCKED,"Unusual location luxury goods"
+28,4,4200.00,DOMESTIC,"Domestic Transfer",776655443305,"Hyderabad","India",2026-10-07 15:35:41.0,5,LOW,APPROVED,"Health checkup lab tests"
+17,3,7500.00,DOMESTIC,"Domestic Transfer",887766554406,"Bengaluru","India",2026-10-07 15:35:41.0,10,LOW,APPROVED,"Online apparel purchase"
+6,2,25000.00,DOMESTIC,"Domestic Transfer",987654321006,"Mumbai","India",2026-10-07 15:35:41.0,15,LOW,APPROVED,"Apartment rent transfer"
+27,4,6500.00,INTERNATIONAL,"International Cross-Border Transfer",776655443304,"San Francisco","USA",2026-10-06 15:35:41.0,22,LOW,APPROVED,"Cloud developer subscription"
+16,3,850.00,DOMESTIC,"Domestic Transfer",887766554405,"Bengaluru","India",2026-10-06 15:35:41.0,5,LOW,APPROVED,"Cab rides payment"
+5,2,1800.00,DOMESTIC,"Domestic Transfer",987654321005,"Pune","India",2026-10-06 15:35:41.0,10,LOW,APPROVED,"Weekend dining"
+26,4,12000.00,DOMESTIC,"Domestic Transfer",776655443303,"Hyderabad","India",2026-10-05 15:35:41.0,10,LOW,APPROVED,"Electronic gadget repair"
+15,3,2800.00,DOMESTIC,"Domestic Transfer",887766554404,"Delhi","India",2026-10-05 15:35:41.0,10,LOW,APPROVED,"Hotel dining"
+4,2,3500.00,DOMESTIC,"Domestic Transfer",987654321004,"Mumbai","India",2026-10-05 15:35:41.0,5,LOW,APPROVED,"Fuel station"
+14,3,6200.00,DOMESTIC,"Domestic Transfer",887766554403,"Bengaluru","India",2026-10-04 15:35:41.0,12,LOW,APPROVED,"Flight ticket Bengaluru-Delhi"
+3,2,12500.00,DOMESTIC,"Domestic Transfer",987654321003,"Mumbai","India",2026-10-04 15:35:41.0,12,LOW,APPROVED,"Monthly electricity & water utilities"
+2,2,2200.00,DOMESTIC,"Domestic Transfer",987654321002,"Mumbai","India",2026-10-04 15:35:41.0,8,LOW,APPROVED,"Grocery supermarket"
+13,3,4300.00,DOMESTIC,"Domestic Transfer",887766554402,"Bengaluru","India",2026-10-03 15:35:41.0,8,LOW,APPROVED,"Departmental store"
+1,2,450.00,DOMESTIC,"Domestic Transfer",987654321001,"Mumbai","India",2026-10-03 15:35:41.0,5,LOW,APPROVED,"Coffee and bakery"
+25,4,1500.00,DOMESTIC,"Domestic Transfer",776655443302,"Hyderabad","India",2026-10-02 15:35:41.0,5,LOW,APPROVED,"Books & stationery"
+12,3,1200.00,DOMESTIC,"Domestic Transfer",887766554401,"Bengaluru","India",2026-10-02 15:35:41.0,5,LOW,APPROVED,"Bookstore order"
+24,4,3200.00,DOMESTIC,"Domestic Transfer",776655443301,"Hyderabad","India",2026-10-01 15:35:41.0,5,LOW,APPROVED,"Annual gym membership"

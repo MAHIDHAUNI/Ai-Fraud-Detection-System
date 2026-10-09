@@ -1,45 +1,39 @@
 package com.frauddetect;
 
-import com.frauddetect.concurrent.StatsCounter;
 import com.frauddetect.dao.AlertDAO;
 import com.frauddetect.dao.SettingsDAO;
 import com.frauddetect.dao.TransactionDAO;
 import com.frauddetect.dao.UserDAO;
 import com.frauddetect.db.DBConnection;
-import com.frauddetect.detection.FraudDetectionEngine;
+import com.frauddetect.exception.AuthenticationException;
 import com.frauddetect.exception.DatabaseException;
 import com.frauddetect.model.Admin;
+import com.frauddetect.model.Alert;
 import com.frauddetect.model.Customer;
-import com.frauddetect.model.DomesticTransaction;
-import com.frauddetect.model.InternationalTransaction;
 import com.frauddetect.model.RiskLevel;
-import com.frauddetect.model.Transaction;
 import com.frauddetect.model.User;
-import com.frauddetect.service.TransactionService;
+import com.frauddetect.service.AlertService;
+import com.frauddetect.service.AuthService;
+import com.frauddetect.service.ReportService;
 import com.frauddetect.util.PasswordUtil;
 
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.io.File;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Map;
 
 /**
  * Main application entry point for AI Fraud Detection & Transaction Monitoring System.
- * Phase 6 Verification: Tests Multithreading & Concurrency (Rubric 3).
- * Rapidly submits 10 concurrent transactions through TransactionService to a thread-safe
- * BlockingQueue consumed by 3 background worker threads (TransactionMonitor), verifying
- * synchronized StatsCounter metric aggregation without race conditions.
+ * Phase 7 Verification: Tests the complete Service Layer:
+ * 1. AuthService (AuthenticationException, Password verification, polymorphic returns)
+ * 2. AlertService (Unresolved alert retrieval, alert resolution)
+ * 3. ReportService (Summary, Collectors.groupingBy risk breakdown, Top 5 riskiest users, 7-day trend, CSV export)
  */
 public class Main {
 
     public static void main(String[] args) {
         System.out.println("=========================================================================");
-        System.out.println(" AI-Powered Financial Fraud Detection System - Phase 6 Verification");
+        System.out.println(" AI-Powered Financial Fraud Detection System - Phase 7 Verification");
         System.out.println("=========================================================================\n");
-
-        TransactionService transactionService = null;
 
         try {
             DBConnection dbConnection = DBConnection.getInstance();
@@ -50,100 +44,89 @@ public class Main {
 
             seedUsersIfEmpty(userDAO);
 
-            FraudDetectionEngine engine = new FraudDetectionEngine(settingsDAO, userDAO, transactionDAO);
-            StatsCounter statsCounter = new StatsCounter();
+            // -----------------------------------------------------------------
+            // 1. AuthService Verification
+            // -----------------------------------------------------------------
+            System.out.println("--- 1. AuthService Verification ---");
+            AuthService authService = new AuthService(userDAO);
 
-            // Latch to synchronize and wait until all 10 transactions have been processed by workers
-            int burstCount = 10;
-            CountDownLatch completionLatch = new CountDownLatch(burstCount);
-            AtomicInteger processedCounter = new AtomicInteger(0);
+            // 1a. Test successful Admin login
+            User adminUser = authService.login("admin", "admin123");
+            System.out.printf("Admin Login Success   : %s | Role: %s | %s%n",
+                    adminUser.getUsername(), adminUser.getRole(), adminUser.getDashboardTitle());
 
-            // Initialize TransactionService with 3 background worker threads and completion callback
-            transactionService = new TransactionService(
-                    transactionDAO, alertDAO, engine, statsCounter,
-                    (txn, result) -> {
-                        int current = processedCounter.incrementAndGet();
-                        System.out.printf("  [Thread: %-15s] Processed Txn #%-3d | User %d | Amount: ₹%,9.2f | Score: %3d (%-6s) -> %s%n",
-                                Thread.currentThread().getName(), txn.getTxnId(), txn.getUserId(),
-                                txn.getAmount(), result.getScore(), result.getLevel(), result.getRecommendedStatus());
-                        completionLatch.countDown();
-                    }
-            );
+            // 1b. Test successful Customer login
+            User customerUser = authService.login("john_doe", "password123");
+            System.out.printf("Customer Login Success: %s | Role: %s | %s%n",
+                    customerUser.getUsername(), customerUser.getRole(), customerUser.getDashboardTitle());
 
-            System.out.println("-------------------------------------------------------------------------");
-            System.out.printf("Submitting %d transactions rapidly to test asynchronous worker pool...%n", burstCount);
-            System.out.println("-------------------------------------------------------------------------");
-
-            long startTime = System.currentTimeMillis();
-
-            // Submit 10 diverse transactions rapidly
-            for (int i = 1; i <= burstCount; i++) {
-                Transaction txn;
-                if (i == 4) {
-                    // Deliberate high-risk international transaction
-                    txn = new InternationalTransaction(
-                            0, 2, 95000.00, "112233445566", "Dubai", "UAE",
-                            "Concurrent Test - High-value Overseas Import",
-                            Timestamp.valueOf(LocalDateTime.now().withHour(3).withMinute(15)), 0, RiskLevel.LOW, "PENDING"
-                    );
-                } else if (i == 7) {
-                    // Deliberate medium-risk round amount
-                    txn = new DomesticTransaction(
-                            0, 3, 50000.00, "887766554499", "Bengaluru", "India",
-                            "Concurrent Test - Round Amount",
-                            Timestamp.valueOf(LocalDateTime.now().withHour(14)), 0, RiskLevel.LOW, "PENDING"
-                    );
-                } else if (i == 9) {
-                    // Deliberate statistical anomaly
-                    txn = new DomesticTransaction(
-                            0, 3, 195000.00, "887766554488", "Bengaluru", "India",
-                            "Concurrent Test - Statistical Anomaly",
-                            Timestamp.valueOf(LocalDateTime.now().withHour(15)), 0, RiskLevel.LOW, "PENDING"
-                    );
-                } else {
-                    // Normal routine domestic transaction
-                    txn = new DomesticTransaction(
-                            0, (i % 3) + 2, 1200.00 * i, "9876543210" + String.format("%02d", i),
-                            "Mumbai", "India", "Routine retail transaction #" + i,
-                            Timestamp.valueOf(LocalDateTime.now().withHour(12).withMinute(i * 5)), 0, RiskLevel.LOW, "PENDING"
-                    );
-                }
-
-                // Rapid asynchronous submission (Producer)
-                transactionService.submit(txn);
+            // 1c. Test failed login exception
+            try {
+                System.out.print("Testing bad password ('wrong_pwd')... ");
+                authService.login("admin", "wrong_pwd");
+                System.out.println("FAILED: Should have thrown AuthenticationException");
+            } catch (AuthenticationException e) {
+                System.out.println("PASSED: Caught expected AuthenticationException -> " + e.getMessage());
             }
 
-            // Wait for all 10 asynchronous worker tasks to finish processing
-            boolean allFinished = completionLatch.await(10, TimeUnit.SECONDS);
-            long totalElapsed = System.currentTimeMillis() - startTime;
+            // -----------------------------------------------------------------
+            // 2. AlertService Verification
+            // -----------------------------------------------------------------
+            System.out.println("\n--- 2. AlertService Verification ---");
+            AlertService alertService = new AlertService(alertDAO);
+            List<Alert> unresolved = alertService.getUnresolvedAlerts();
+            System.out.printf("Total Unresolved Alerts: %d%n", unresolved.size());
+            if (!unresolved.isEmpty()) {
+                Alert first = unresolved.get(0);
+                System.out.printf("  Resolving Alert #%d (Txn #%d)... ", first.getAlertId(), first.getTxnId());
+                boolean resolved = alertService.resolveAlert(first.getAlertId(), "Reviewed and verified with customer by phone");
+                System.out.println(resolved ? "SUCCESS" : "FAILED");
+            }
 
-            System.out.println("\n-------------------------------------------------------------------------");
-            System.out.println("Concurrency & Synchronization Results");
-            System.out.println("-------------------------------------------------------------------------");
-            System.out.printf("All 10 Transactions Processed : %s%n", (allFinished ? "YES (SUCCESS)" : "TIMEOUT"));
-            System.out.printf("Total Processing Time         : %d ms%n", totalElapsed);
+            // -----------------------------------------------------------------
+            // 3. ReportService Verification (Collections & Streams)
+            // -----------------------------------------------------------------
+            System.out.println("\n--- 3. ReportService Verification (Analytics & Grouping) ---");
+            ReportService reportService = new ReportService(transactionDAO, userDAO, alertDAO);
 
-            // Fetch immutable snapshot from synchronized StatsCounter
-            StatsCounter.StatsSnapshot snapshot = statsCounter.getSnapshot();
-            System.out.printf("Synchronized Stats Snapshot   : %s%n", snapshot);
-            System.out.printf("  Total Processed : %d%n", snapshot.getTotalProcessed());
-            System.out.printf("  Approved        : %d%n", snapshot.getApprovedCount());
-            System.out.printf("  Flagged         : %d%n", snapshot.getFlaggedCount());
-            System.out.printf("  Blocked         : %d%n", snapshot.getBlockedCount());
-            System.out.printf("  Total Volume    : ₹%,.2f%n", snapshot.getTotalVolumeAmount());
-            System.out.printf("  Prevented Fraud : ₹%,.2f%n", snapshot.getBlockedFraudAmount());
+            // 3a. System Metrics Summary
+            ReportService.SystemSummary summary = reportService.getSummaryMetrics();
+            System.out.printf("System Summary: %s%n", summary);
+
+            // 3b. RUBRIC: 2 - Collections.groupingBy Risk Breakdown
+            System.out.println("\nTransactions Grouped by Risk Level (Collectors.groupingBy):");
+            Map<RiskLevel, Long> riskMap = reportService.getTransactionsPerRiskLevel();
+            riskMap.forEach((level, count) -> System.out.printf("  %-7s : %d transactions%n", level, count));
+
+            // 3c. RUBRIC: 2 - Top Riskiest Users (Custom Comparator + Streams)
+            System.out.println("\nTop Riskiest Customer Accounts:");
+            List<ReportService.RiskyUserSummary> topRisky = reportService.getTopRiskiestUsers(5);
+            for (ReportService.RiskyUserSummary r : topRisky) {
+                System.out.printf("  User #%-2d (%-14s) | Txns: %2d | Blocked: %d | Flagged: %d | Avg Score: %5.1f | Volume: ₹%,.2f%n",
+                        r.getUserId(), r.getUsername(), r.getTotalTransactions(),
+                        r.getBlockedCount(), r.getSuspiciousCount(), r.getAverageRiskScore(), r.getTotalAmount());
+            }
+
+            // 3d. 7-Day Trend
+            System.out.println("\nLast 7 Days Activity Trend:");
+            Map<String, ReportService.DailyTrend> trend = reportService.getDailyTrendLast7Days();
+            trend.forEach((date, d) -> System.out.printf("  %s -> Total: %2d | Approved: %2d | Flagged: %d | Blocked: %d | Volume: ₹%,9.2f%n",
+                    date, d.getTotalCount(), d.getApprovedCount(), d.getFlaggedCount(), d.getBlockedCount(), d.getTotalVolume()));
+
+            // 3e. Export CSV Report
+            File csvOutput = new File("docs", "sample_audit_report.csv");
+            reportService.exportReportToCSV(csvOutput);
+            System.out.printf("%nAudit CSV Exported Successfully: %s (Size: %d bytes)%n",
+                    csvOutput.getAbsolutePath(), csvOutput.length());
 
             System.out.println("\n=========================================================================");
-            System.out.println(" Phase 6 Verification Completed Successfully (No Race Conditions)!");
+            System.out.println(" Phase 7 Verification Completed Successfully!");
             System.out.println("=========================================================================");
 
         } catch (Exception e) {
-            System.err.println("Exception during Phase 6 execution: " + e.getMessage());
+            System.err.println("Exception during Phase 7 execution: " + e.getMessage());
             e.printStackTrace();
         } finally {
-            if (transactionService != null) {
-                transactionService.shutdown();
-            }
             com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
         }
     }
